@@ -7,22 +7,22 @@ from urllib.parse import urlsplit
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 
 app = FastAPI()
 MAX_RESPONSE_BYTES = 1_000_000
 
 
 class SiteInfo(BaseModel):
-    url: str
+    url: HttpUrl
     title: str | None
     description: str | None
     first_h1: str | None
 
 
-async def validate_public_url(url: str) -> None:
+async def validate_public_url(url: HttpUrl) -> None:
     try:
-        parts = urlsplit(url)
+        parts = urlsplit(str(url))
         hostname = parts.hostname
         port = parts.port
     except ValueError as error:
@@ -60,8 +60,9 @@ async def validate_public_url(url: str) -> None:
         raise HTTPException(status_code=422, detail="URL must resolve only to public IP addresses")
 
 @app.get("/parse", response_model=SiteInfo)
-async def parse_site(url: Annotated[str, Query(min_length=8, max_length=2048)]) -> SiteInfo:
+async def parse_site(url: Annotated[HttpUrl, Query(max_length=2048)]) -> SiteInfo:
     await validate_public_url(url)
+    url_string = str(url)
 
     try:
         async with httpx.AsyncClient(
@@ -71,7 +72,7 @@ async def parse_site(url: Annotated[str, Query(min_length=8, max_length=2048)]) 
         ) as client:
             async with client.stream(
                 "GET",
-                url,
+                url_string,
                 headers={"User-Agent": "SiteInfoParser/1.0"},
             ) as response:
                 if 300 <= response.status_code < 400:
